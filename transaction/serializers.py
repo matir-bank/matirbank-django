@@ -3,6 +3,7 @@ from django.db.models.fields import CharField
 from rest_framework import serializers
 from .models import Transaction
 
+
 class TransactionSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -19,7 +20,9 @@ class TransactionPostSerializer(serializers.ModelSerializer):
     
     def validate_amount(self, value):
         if value < 0:
-            raise serializers.ValidationError('Must Be Positive')
+            raise serializers.ValidationError('Must be a positive number.')
+        if value > 50000:
+            raise serializers.ValidationError('Transaction amount must be less than 50000.')
         return value
 
 #  add fund serializer
@@ -56,7 +59,10 @@ class TopUpSerializer(TransactionPostSerializer):
     mobile = serializers.CharField(max_length=255)
     
     def create(self, validated_data):
-        return Transaction.objects.create(amount=validated_data['amount'], type='TopUP', mobile=validated_data['mobile'])
+        validated_data.pop('operator')
+        mobile = validated_data.pop('mobile')
+        validated_data['additional'] = mobile
+        return Transaction.objects.create(**validated_data)
 
     class Meta:
         model = Transaction

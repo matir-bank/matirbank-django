@@ -16,7 +16,6 @@ from .serializers import ( TransactionSerializer,
                             AddFundSerializer,
                             TopUpSerializer,)
 from decimal import Decimal
-from datetime import datetime
 from django.http import Http404
 # for or query
 from django.db.models import Q
@@ -104,12 +103,12 @@ class AddFundView(APIView):
             
             # update user balance
             request.user.balance = request.user.balance+Decimal(serializer.validated_data['amount'])
-            request.user.balance_last_update = datetime.now()
+            request.user.balance_last_update = timezone.now()
             request.user.save()
 
             # update card balance
             card_account.balance = card_account.balance - Decimal(serializer.validated_data['amount'])
-            card_account.balance_last_update = datetime.now()
+            card_account.balance_last_update = timezone.now()
             card_account.save()
             
 
@@ -194,24 +193,38 @@ class MobileTopup(APIView):
     def post(self, request, format=None):
         serializer = TopUpSerializer(data=request.data)
         if serializer.is_valid():
-
+            
+            money_amount =  Decimal(serializer.validated_data['amount'])
             # check if have balance
-            if request.user.balance < Decimal(serializer.validated_data['amount']):
+            if request.user.balance < money_amount:
                 return response_maker.Error({'detail': 'Not Enough Balance.'})
 
-             # save transaction
-            serializer.save()
+            # get topup account
+            # & send money to topup account
+            try:
+                topup_acc = Account.objects.get(pk=reserved_accounts.TOPUP_USER_ID)
+            except Account.DoesNotExist:
+                return response_maker.Error({'detail': 'Could not found topup account.'})
+
 
             # calculatate both balance
-            request.user.balance = request.user.balance-Decimal(serializer.validated_data['amount'])
+            request.user.balance = request.user.balance - money_amount
+            topup_acc.balance = topup_acc.balance + money_amount
             
-            # last upate both
-            request.user.balance_last_update = datetime.now()
+            # # last upate both
+            request.user.balance_last_update = timezone.now()
+            topup_acc.balance_last_update = timezone.now()
             
-            # save both
+            # # save both
             request.user.save()
+            topup_acc.save()
+            #  card user
+            #  # save transaction
+            transaction = serializer.save(source=request.user.id, destination=topup_acc.id, type=transaction_type.TOPUP)
 
-            return response_maker.Ok(serializer.data)
+            tserializer = TransactionSerializer(transaction)
+
+            return response_maker.Ok(tserializer.data)
 
         return response_maker.Error(serializer.errors)
 
